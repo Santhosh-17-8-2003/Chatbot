@@ -1,0 +1,133 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Chatbot (Teacher-Student)</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            Chatbot
+        </div>
+
+        <div id="chat-history" class="chat-messages">
+            {% if not messages %}
+                <p class="welcome-message">{{ welcome_message }}</p>
+            {% endif %}
+
+            {% for message in messages %}
+                <div class="message-bubble 
+                    {% if message.user_message %}
+                        user-message
+                    {% else %}
+                        bot-message
+                    {% endif %}
+                ">
+                    {% if message.user_message %}
+                        {{ message.user_message }}
+                    {% else %}
+                        {{ message.bot_response }}
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="chat-input-area">
+            <form id="chat-form" class="chat-input-form" method="post">
+                {% csrf_token %}
+                <input type="text" id="user-input" name="{{ form.user_input.name }}" placeholder="Type your message here..." class="user-input-field" required>
+                <button type="submit" class="send-button">Send</button>
+            </form>
+        </div>
+    </div>
+<script>
+    function scrollToBottom() {
+        const chatHistory = document.getElementById('chat-history');
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function getCsrfToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]').value;
+    }
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            speechSynthesis.speak(utterance);
+        } else {
+            console.warn('SpeechSynthesis API not supported in this browser.');
+        }
+    }
+
+    document.getElementById('chat-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+
+        const userInputField = document.getElementById('user-input');
+        const userMessage = userInputField.value.trim();
+        const chatHistoryDiv = document.getElementById('chat-history');
+
+        if (userMessage === '') return;
+
+        const userBubble = document.createElement('div');
+        userBubble.className = 'message-bubble user-message'; // Using custom class
+        userBubble.innerText = userMessage;
+        chatHistoryDiv.appendChild(userBubble);
+        scrollToBottom();
+        userInputField.value = '';
+
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'message-bubble bot-message typing-indicator'; // Added typing-indicator class
+        typingIndicator.id = 'typing-indicator';
+        typingIndicator.innerText = 'Bot is typing...';
+        chatHistoryDiv.appendChild(typingIndicator);
+        scrollToBottom();
+
+        try {
+            const response = await fetch('{% url "get_bot_response_ajax" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ prompt: userMessage })
+            });
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+            console.log("Response from backend:", data);
+            const botReply = data.bot_response;
+
+            if (chatHistoryDiv.contains(typingIndicator)) {
+                chatHistoryDiv.removeChild(typingIndicator);
+            }
+
+            const botBubble = document.createElement('div');
+            botBubble.className = 'message-bubble bot-message'; // Using custom class
+            botBubble.innerText = botReply;
+            chatHistoryDiv.appendChild(botBubble);
+            scrollToBottom();
+
+            speak(botReply);
+
+        } catch (error) {
+            console.error('Error sending message:', error);
+            if (chatHistoryDiv.contains(typingIndicator)) {
+                chatHistoryDiv.removeChild(typingIndicator);
+            }
+            const errorBubble = document.createElement('div');
+            errorBubble.className = 'message-bubble bot-message error-message'; // Added error-message class
+            errorBubble.innerText = 'Error: Could not get a response.';
+            chatHistoryDiv.appendChild(errorBubble);
+            scrollToBottom();
+        }
+    });
+
+    window.onload = scrollToBottom;
+</script>
+
+</body>
+</html>
